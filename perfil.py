@@ -1,0 +1,82 @@
+# -*- coding: utf-8 -*-
+"""
+Carga del perfil de busqueda.
+
+Todo lo que cambia entre una persona y otra -- el umbral de sueldo, las listas de
+empresas, las palabras de rol, las busquedas de LinkedIn, el registro de ATS --
+vive en perfil.json y no en el codigo. Asi el repo se puede publicar sin publicar
+la busqueda de trabajo de nadie.
+
+Orden de carga:
+  1. perfil.json          (el suyo; esta en .gitignore)
+  2. perfil.example.json  (fallback versionado, para que el repo corra recien clonado)
+
+Los campos que necesitaban explicacion se escriben como {"_": "...", "lista": [...]}
+en el JSON, porque JSON no tiene comentarios. `_lista()` desenvuelve las dos formas.
+"""
+
+import json
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+PERFIL_PATH = BASE_DIR / "perfil.json"
+EJEMPLO_PATH = BASE_DIR / "perfil.example.json"
+
+
+def _lista(v):
+    """Acepta ["a","b"] o {"_": "doc", "lista": ["a","b"]}."""
+    if isinstance(v, dict):
+        return v.get("lista", [])
+    return v or []
+
+
+def _cargar():
+    ruta = PERFIL_PATH if PERFIL_PATH.exists() else EJEMPLO_PATH
+    if not ruta.exists():
+        raise SystemExit(
+            "ERROR: falta perfil.json y perfil.example.json. Copie el ejemplo del repo."
+        )
+    with open(ruta, "r", encoding="utf-8") as f:
+        return ruta, json.load(f)
+
+
+ORIGEN, P = _cargar()
+ES_EJEMPLO = ORIGEN.name == EJEMPLO_PATH.name
+
+_pago = P["pago"]
+_match = P["match"]
+_fuentes = P["fuentes"]
+
+# --- Regla de pago ------------------------------------------------------------
+MIN_SALARY_USD_FULLTIME = _pago["min_salary_usd_fulltime"]
+PART_TIME_PASA_SIEMPRE = _pago.get("part_time_pasa_siempre", True)
+PART_TIME_TERMS = _lista(_pago["part_time_terms"])
+ANALYST_TIER_TERMS = _lista(_pago["analyst_tier_terms"])
+SENIOR_TITLE_TERMS = _lista(_pago["senior_title_terms"])
+EMPRESAS_PAGAN_BIEN = {e.lower() for e in _lista(_pago["empresas_pagan_bien"])}
+EMPRESAS_NO_CALIFICAN = {e.lower() for e in _lista(_pago["empresas_no_califican"])}
+
+# --- Matching -----------------------------------------------------------------
+CATEGORIES = _lista(_match["categorias_getonboard"])
+ROLE_KEYWORDS = _lista(_match["role_keywords"])
+STACK_KEYWORDS = _lista(_match["stack_keywords"])
+NEGATIVE_TITLE = _lista(_match["negative_title"])
+SENIORITY_BLOCK_IDS = set(_lista(_match["seniority_block_ids"]))
+LOCATION_OK_TERMS = _lista(_match["location_ok_terms"])
+
+# --- Fuentes ------------------------------------------------------------------
+GOB = _fuentes.get("getonboard", {})
+GOB_ACTIVA = GOB.get("activa", True)
+PER_PAGE = GOB.get("per_page", 50)
+MAX_PAGES = GOB.get("max_pages", 2)
+
+LINKEDIN = _fuentes.get("linkedin", {})
+LINKEDIN_ACTIVA = LINKEDIN.get("activa", True)
+LINKEDIN_SEARCHES = [tuple(s) for s in _lista(LINKEDIN.get("searches", []))]
+LINKEDIN_PAGES = LINKEDIN.get("pages_per_search", 2)
+LINKEDIN_TIME_POSTED = LINKEDIN.get("time_posted", "r604800")
+
+EMPRESAS_CFG = _fuentes.get("empresas", {})
+EMPRESAS_ACTIVA = EMPRESAS_CFG.get("activa", True)
+EMPRESAS_REGISTRO = [tuple(e) for e in _lista(EMPRESAS_CFG.get("registro", []))]
+EIGHTFOLD_QUERIES = _lista(EMPRESAS_CFG.get("eightfold_queries", []))

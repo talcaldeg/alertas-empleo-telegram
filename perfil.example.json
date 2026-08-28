@@ -1,0 +1,145 @@
+{
+  "_lea_esto": [
+    "Copie este archivo a perfil.json y edítelo. perfil.json está en .gitignore:",
+    "su búsqueda de trabajo no tiene por qué ser pública. Si no existe perfil.json,",
+    "el bot corre con estos valores de ejemplo.",
+    "El criterio detrás de cada campo está explicado en el README."
+  ],
+
+  "pago": {
+    "_": "La única regla que decide si una oferta le llega al teléfono. Ver README.",
+    "min_salary_usd_fulltime": 3500,
+    "part_time_pasa_siempre": true,
+    "part_time_terms": [
+      "part time", "part-time", "parttime", "half time", "half-time",
+      "medio tiempo", "media jornada", "jornada parcial", "tiempo parcial",
+      "por horas", "20 horas", "25 horas", "30 horas", "20 hrs", "30 hrs"
+    ],
+    "analyst_tier_terms": [
+      "data analyst", "bi analyst", "business analyst", "analytics analyst",
+      "reporting analyst", "analista de datos", "analista bi", "analista de bi",
+      "analista de inteligencia", "analista de negocio", "analista de negocios",
+      "analista de reportería", "analista"
+    ],
+    "senior_title_terms": [
+      "senior", "sr ", "sr.", "ssr", "lead", "manager", "head", "principal",
+      "staff", "director", "chief", "jefe", "jefatura", "subgerente", "gerente",
+      "expert", "architect", "arquitecto"
+    ],
+    "empresas_pagan_bien": {
+      "_": [
+        "Empresas donde INCLUSO un cargo de nivel analyst supera el umbral, aunque no",
+        "publiquen el rango. No es 'empresa grande' ni 'empresa deseable': es el único",
+        "criterio que deja pasar un analyst sin sueldo publicado. Ponga las suyas.",
+        "Se compara por substring, en minúsculas."
+      ],
+      "lista": [
+        "google", "amazon", "microsoft", "meta", "netflix", "stripe", "datadog",
+        "snowflake", "databricks", "mongodb", "gitlab", "shopify", "atlassian",
+        "cloudflare", "mckinsey", "boston consulting", "bain"
+      ]
+    },
+    "empresas_no_califican": {
+      "_": [
+        "Contraparte explícita, y manda por sobre la lista anterior: agregar una de",
+        "estas allá por descuido no reabre el hueco. Van acá los rubros que a nivel",
+        "analyst pagan bajo el umbral en su mercado (retail local, banca local,",
+        "consultoras de staffing que facturan por bolsa de horas). Va vacía a",
+        "propósito: las empresas concretas dependen de su mercado y de su umbral,",
+        "y no corresponde publicar la tabla de sueldos de nadie."
+      ],
+      "lista": []
+    }
+  },
+
+  "match": {
+    "_": "Qué se considera una oferta candidata, antes de mirar el sueldo.",
+    "categorias_getonboard": [
+      "data-science-analytics",
+      "machine-learning-ai",
+      "operations-management",
+      "programming"
+    ],
+    "role_keywords": [
+      "analytics engineer", "analytics manager", "analytics lead",
+      "bi ", "business intelligence", "bi lead", "bi manager", "bi analyst",
+      "data analyst", "data engineer", "data & analytics", "data and analytics",
+      "data lead", "data manager", "head of data", "analytics",
+      "looker", "bigquery", "power bi", "dbt", "reporting",
+      "analista de datos", "analista bi", "analista de bi",
+      "inteligencia de negocios", "ingeniero de datos", "ingeniería de datos",
+      "científico de datos", "control de gestión", "analítica", "reportería"
+    ],
+    "stack_keywords": [
+      "bigquery", "gcp", "google cloud", "dbt", "dataform", "looker",
+      "power bi", "powerbi", "dax", "sql", "python", "etl", "elt", "airflow",
+      "snowflake", "redshift", "data warehouse", "tableau",
+      "pipelines", "modeling", "modelado", "data modeling"
+    ],
+    "negative_title": {
+      "_": [
+        "Descarta si el título trae alguna. Se comparan por PALABRA COMPLETA, no por",
+        "substring: 'ios' dentro de 'Envíos' y 'ui' dentro de 'Continuous' fueron",
+        "falsos positivos reales."
+      ],
+      "lista": [
+        "junior", "trainee", "práctica", "practicante", "intern", "internship",
+        "pasante", "pasantía", "aprendiz", "becario", "estudiante",
+        "frontend", "front-end", "backend developer", "full stack", "fullstack",
+        "mobile", "android", "ios", "qa", "tester", "designer", "diseñador",
+        "ux", "ui", "devops", "sysadmin", "cybersecurity",
+        "sales", "ventas", "marketing", "soporte", "support"
+      ]
+    },
+    "seniority_block_ids": {
+      "_": "IDs de seniority de GetOnBoard a descartar. 1 = sin experiencia, 2 = junior.",
+      "lista": [1, 2]
+    },
+    "location_ok_terms": ["chile", "santiago", "latam", "latin america", "americas", "remote"]
+  },
+
+  "fuentes": {
+    "getonboard": {
+      "activa": true,
+      "per_page": 50,
+      "max_pages": 2
+    },
+    "linkedin": {
+      "_": "Endpoint público 'guest' de LinkedIn: sin login, sin sueldo ni seniority.",
+      "activa": true,
+      "searches": [
+        ["data analyst", "Chile"],
+        ["business intelligence", "Chile"],
+        ["analytics engineer", "Chile"],
+        ["data engineer", "Chile"],
+        ["BI lead", "Chile"],
+        ["analytics manager", "Chile"],
+        ["data analyst", "Latin America"]
+      ],
+      "pages_per_search": 2,
+      "time_posted": "r604800"
+    },
+    "empresas": {
+      "_": [
+        "Páginas de empleo de empresas, leídas por su ATS. Formato de cada entrada:",
+        "[nombre_visible, ats, token]. ATS soportados: greenhouse, lever, ashby,",
+        "teamtailor (token = 'host|apikey' del widget), eightfold (token =",
+        "'tenant|domain'). Para agregar una empresa, mire el código de su página de",
+        "empleos y saque el slug."
+      ],
+      "activa": true,
+      "registro": [
+        ["Nubank",       "greenhouse", "nubank"],
+        ["Clara",        "greenhouse", "clara"],
+        ["Cabify",       "greenhouse", "cabify"],
+        ["Bitso",        "greenhouse", "bitso"],
+        ["Remote",       "greenhouse", "remote"],
+        ["Fintual",      "lever",      "fintual"],
+        ["dLocal",       "lever",      "dlocal"],
+        ["Belvo",        "ashby",      "belvo"],
+        ["Mural",        "ashby",      "mural"]
+      ],
+      "eightfold_queries": ["data", "analytics", "business intelligence"]
+    }
+  }
+}

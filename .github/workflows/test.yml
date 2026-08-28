@@ -1,0 +1,26 @@
+name: Verificar la regla de pago
+
+# Guardia mecanica: corre en cada push y pull request, sin red y sin enviar nada.
+# Si alguien rompe la regla de pago, contamina las listas de empresas o le saca
+# el filtro de pago a una de las tres fuentes, esto falla aca y queda la marca roja
+# en GitHub antes de que la corrida programada mande nada a Telegram.
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  autotest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Regla de pago (umbral full time / part time libre)
+        run: python alertas_empleos.py --autotest
+
+      - name: Los modulos de las fuentes importan bien
+        run: python -c "import alertas_empleos, fuente_linkedin, fuente_empresas"

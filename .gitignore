@@ -1,0 +1,14 @@
+# Credenciales de Telegram. En la nube van como Secrets de GitHub Actions.
+config.json
+
+# El perfil de busqueda es de cada persona: umbral, empresas, keywords.
+# El repo corre igual sin el, con perfil.example.json.
+perfil.json
+
+# Log local (en la nube los logs se ven en la pestana Actions).
+alertas.log
+
+__pycache__/
+*.pyc
+
+# seen_jobs.json SI se versiona: es la memoria de lo ya enviado.

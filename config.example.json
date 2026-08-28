@@ -1,0 +1,5 @@
+{
+  "_lea_esto": "Copie a config.json (esta en .gitignore) o use las variables de entorno TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID, que tienen prioridad. En GitHub Actions van como Secrets.",
+  "telegram_bot_token": "PON_AQUI_EL_TOKEN_DE_BOTFATHER",
+  "telegram_chat_id": "PON_AQUI_TU_CHAT_ID"
+}
