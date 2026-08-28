@@ -24,7 +24,7 @@ import re
 
 REQUEST_TIMEOUT = 15
 SLEEP_BETWEEN = 0.4
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) alertas-empleo/1.0"
+from perfil import USER_AGENT as UA
 
 # El registro de empresas (nombre, ats, token) y las queries de Eightfold salen
 # del perfil, no del codigo: ver perfil.json y el README.

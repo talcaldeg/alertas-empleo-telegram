@@ -131,7 +131,7 @@ def save_seen(seen):
 
 
 def http_get_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "alertas-empleo/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": perfil.USER_AGENT})
     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
         return json.loads(resp.read().decode("utf-8"))
 

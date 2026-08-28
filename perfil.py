@@ -23,6 +23,15 @@ PERFIL_PATH = BASE_DIR / "perfil.json"
 EJEMPLO_PATH = BASE_DIR / "perfil.example.json"
 
 
+# Identidad del bot en cada peticion HTTP. Se define una sola vez a proposito: si
+# una fuente se identifica distinto que las otras, esa diferencia termina siendo una
+# suplantacion de navegador que nadie decidio a conciencia. Verificado el 27-ago-2026:
+# el endpoint guest de LinkedIn responde igual con este UA que con uno de Chrome
+# (HTTP 200, mismas tarjetas), asi que ser honesto no cuesta nada.
+USER_AGENT = ("alertas-empleo/1.0 "
+              "(+https://github.com/talcaldeg/alertas-empleo-telegram)")
+
+
 def _lista(v):
     """Acepta ["a","b"] o {"_": "doc", "lista": ["a","b"]}."""
     if isinstance(v, dict):

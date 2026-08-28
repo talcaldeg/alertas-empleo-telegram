@@ -2,9 +2,10 @@
 
 [![Verificar la regla de pago](https://github.com/talcaldeg/alertas-empleo-telegram/actions/workflows/test.yml/badge.svg)](https://github.com/talcaldeg/alertas-empleo-telegram/actions/workflows/test.yml)
 
-Un bot que revisa tres fuentes de ofertas de trabajo cada dos horas y manda a Telegram
-solo las que pasan un filtro explícito. Corre en GitHub Actions, no necesita servidor y
-usa únicamente la librería estándar de Python.
+Un bot que revisa tres fuentes de ofertas de trabajo y manda a Telegram solo las que
+pasan un filtro explícito. Corre en GitHub Actions, no necesita servidor y usa
+únicamente la librería estándar de Python. La frecuencia se configura en el workflow;
+acá el `schedule` viene comentado a propósito (ver [Cómo usarlo](#cómo-usarlo)).
 
 El código es la parte fácil. Lo que sigue es el criterio, que es lo que en realidad
 decide si esto sirve o si es una fuente más de ruido.
@@ -83,6 +84,32 @@ Sobre los ATS vale la pena decir una cosa: la mayoría de las empresas no tiene 
 propio de empleos, sino un ATS con API pública JSON. Agregar una empresa es averiguar cuál
 usa y con qué *slug*, y escribir una línea en el perfil. El lector de cada ATS es genérico,
 no hay un scraper por empresa.
+
+## Nota sobre las fuentes
+
+Vale la pena ser explícito sobre qué se consulta y cómo, porque es lo primero que
+conviene revisar antes de usar algo así.
+
+**El bot se identifica.** Las tres fuentes mandan el mismo User-Agent, definido una sola
+vez en `perfil.py`, que nombra la herramienta y enlaza este repo. No hay suplantación de
+navegador. La versión anterior sí simulaba Chrome contra LinkedIn; se comprobó que el
+endpoint responde idéntico con un User-Agent honesto (HTTP 200, mismo número de
+resultados), así que la simulación no compraba nada y se sacó. Si una fuente dejara de
+responder por identificarse de verdad, la respuesta correcta es desactivar esa fuente, no
+disfrazarse.
+
+**El volumen es bajo a propósito.** Con la configuración de ejemplo, una corrida son 14
+peticiones a LinkedIn espaciadas 1,5 s y una por empresa del registro espaciadas 0,4 s.
+Es menos tráfico que una persona revisando los mismos sitios a mano.
+
+**Qué es cada fuente.** Las APIs de Greenhouse, Lever y Ashby son públicas y están
+pensadas para consumirse: son las mismas que alimentan las bolsas de empleo de esas
+empresas. GetOnBoard publica una API documentada. El caso de LinkedIn es distinto: se usa
+el endpoint que el sitio sirve a quien no ha iniciado sesión, así que no hay elusión de
+login ni de paywall, pero **sus Términos de Servicio restringen el acceso automatizado**,
+con navegador simulado o sin él. Quien use esto debería decidir por sí mismo si activa esa
+fuente; se apaga con `fuentes.linkedin.activa: false` en el perfil, y las otras dos siguen
+funcionando.
 
 ## Los tres errores, y cómo dejaron de poder repetirse
 

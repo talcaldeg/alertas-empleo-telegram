@@ -30,8 +30,7 @@ from perfil import (
 REQUEST_TIMEOUT = 25
 SLEEP_BETWEEN = 1.5            # respetar el endpoint / evitar 429
 
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+from perfil import USER_AGENT as UA
 
 
 def _strip_tags(s):
