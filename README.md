@@ -2,7 +2,7 @@
 
 [![Verificar la regla de pago](https://github.com/talcaldeg/alertas-empleo-telegram/actions/workflows/test.yml/badge.svg)](https://github.com/talcaldeg/alertas-empleo-telegram/actions/workflows/test.yml)
 
-Un bot que revisa tres fuentes de ofertas de trabajo y manda a Telegram solo las que
+Un bot que revisa cuatro fuentes de ofertas de trabajo y manda a Telegram solo las que
 pasan un filtro explícito. Corre en GitHub Actions, no necesita servidor y usa
 únicamente la librería estándar de Python. La frecuencia se configura en el workflow;
 acá el `schedule` viene comentado a propósito (ver [Cómo usarlo](#cómo-usarlo)).
@@ -24,21 +24,23 @@ Todo lo demás existe para alimentarla.
 
 ## La regla que decide
 
-Una sola función, `filtro_pago()`, y las tres fuentes están obligadas a llamarla. En
+Una sola función, `filtro_pago()`, y las cuatro fuentes están obligadas a llamarla. En
 orden:
 
-**1. Media jornada entra siempre, a cualquier sueldo.** Un cargo de 20 horas se evalúa
-contra un umbral distinto al de una jornada completa, porque el punto de comparación es
-el tiempo que ocupa, no la plata. Poner un piso de sueldo mensual a un part time es
-comparar cosas distintas.
+**1. Cada jornada tiene su piso.** Una jornada completa se mide contra
+`min_salary_usd_fulltime`; un part time, un freelance o un contrato por hora, contra
+`min_salary_usd_parttime`, que es más bajo porque se puede sumar a otro trabajo. Una
+versión anterior dejaba pasar el part time a cualquier sueldo; ahora tiene un piso
+propio en vez de ninguno. La tarifa por hora se lleva a mensual con
+las horas por semana del perfil (`horas_semana_part_time`, 20 en el ejemplo).
 
-**2. Jornada completa con sueldo publicado: manda el techo del rango.** Si la oferta
+**2. Con sueldo publicado: manda el techo del rango.** Si la oferta de jornada completa
 dice "2.500 - 3.200 USD" y el piso configurado es 3.500, se descarta sin más. Se mira el
 techo y no el piso porque el techo es la promesa máxima del aviso; si ni siquiera esa
 llega, la negociación no va a llegar tampoco.
 
-**3. Jornada completa sin sueldo publicado: decide el cargo, y si el cargo es ambiguo,
-la empresa.** Este es el caso difícil, porque es la mayoría: LinkedIn y casi todos los
+**3. Sin sueldo publicado: decide el cargo, y si el cargo es ambiguo, la empresa.**
+Vale igual para las dos jornadas. Este es el caso difícil, porque es la mayoría: LinkedIn y casi todos los
 ATS de empresa no publican rango.
 
 - Un título senior, lead, manager o superior pasa. La distribución de sueldos de esos
@@ -67,18 +69,26 @@ analyst depende del mercado de cada uno y del umbral de cada uno, y no correspon
 publicar la tabla de sueldos estimada de nadie. El mecanismo se entrega; la lista la
 pone quien lo use.
 
-## Las tres fuentes, y por qué no son intercambiables
+## Las cuatro fuentes, y por qué no son intercambiables
 
 | Fuente | Qué entrega | Qué falta |
 |---|---|---|
 | **GetOnBoard** (API pública) | sueldo, modalidad, seniority, categoría | poco volumen fuera de tecnología |
 | **LinkedIn** (endpoint *guest*, sin login) | volumen | ni sueldo ni seniority; solo título, empresa y ubicación |
 | **Páginas de empleo de empresas** (Greenhouse, Lever, Ashby, Teamtailor, Eightfold) | ofertas que no se publican en portales | rara vez traen sueldo |
+| **Part time y contratos por hora** (Himalayas y Arc.dev) | trabajo por hora abierto al país del perfil, casi siempre con tarifa | mucho ruido de reclutadores de entrenamiento de IA |
 
-Las tres normalizan a un formato común y entran por la misma función de filtro. Es
+Las cuatro normalizan a un formato común y entran por la misma función de filtro. Es
 deliberado: el modo natural de que este sistema se degrade es que alguien agregue una
 fuente nueva y se le olvide aplicarle la regla, y entonces por ahí empieza a entrar todo
-lo que las otras dos descartan. Por eso hay una guardia dedicada a eso.
+lo que las otras descartan. Por eso hay una guardia dedicada a eso.
+
+La fuente de contratos tiene un filtro propio antes del de pago: las bolsas por hora están
+llenas de avisos con título de datos que en realidad son anotación o entrenamiento de
+modelos. Se descartan por empresa (`empresas_ruido`) y por título (`titulos_ruido`), las
+dos listas en el perfil. De Himalayas se usa su API pública de búsqueda, filtrada por país
+y tipo de empleo; de Arc, el JSON que trae la página de cada categoría, solo los avisos
+propios de Arc de tipo *contract*.
 
 Sobre los ATS vale la pena decir una cosa: la mayoría de las empresas no tiene un backend
 propio de empleos, sino un ATS con API pública JSON. Agregar una empresa es averiguar cuál
@@ -90,7 +100,7 @@ no hay un scraper por empresa.
 Vale la pena ser explícito sobre qué se consulta y cómo, porque es lo primero que
 conviene revisar antes de usar algo así.
 
-**El bot se identifica.** Las tres fuentes mandan el mismo User-Agent, definido una sola
+**El bot se identifica.** Las cuatro fuentes mandan el mismo User-Agent, definido una sola
 vez en `perfil.py`, que nombra la herramienta y enlaza este repo. No hay suplantación de
 navegador. La versión anterior sí simulaba Chrome contra LinkedIn; se comprobó que el
 endpoint responde idéntico con un User-Agent honesto (HTTP 200, mismo número de
@@ -99,7 +109,8 @@ responder por identificarse de verdad, la respuesta correcta es desactivar esa f
 disfrazarse.
 
 **El volumen es bajo a propósito.** Con la configuración de ejemplo, una corrida son 14
-peticiones a LinkedIn espaciadas 1,5 s y una por empresa del registro espaciadas 0,4 s.
+peticiones a LinkedIn espaciadas 1,5 s, una por empresa del registro espaciadas 0,4 s, 14
+a Himalayas y 3 a Arc espaciadas 0,5 s.
 Es menos tráfico que una persona revisando los mismos sitios a mano.
 
 **Qué es cada fuente.** Las APIs de Greenhouse, Lever y Ashby son públicas y están
@@ -108,8 +119,9 @@ empresas. GetOnBoard publica una API documentada. El caso de LinkedIn es distint
 el endpoint que el sitio sirve a quien no ha iniciado sesión, así que no hay elusión de
 login ni de paywall, pero **sus Términos de Servicio restringen el acceso automatizado**,
 con navegador simulado o sin él. Quien use esto debería decidir por sí mismo si activa esa
-fuente; se apaga con `fuentes.linkedin.activa: false` en el perfil, y las otras dos siguen
-funcionando.
+fuente; se apaga con `fuentes.linkedin.activa: false` en el perfil, y las otras siguen
+funcionando. Himalayas publica su API de búsqueda para consumo externo; Arc no tiene API
+pública y se lee el JSON embebido en su página, que es lo mismo que recibe un navegador.
 
 ## Los tres errores, y cómo dejaron de poder repetirse
 
@@ -132,7 +144,7 @@ función de detección y falla si la encuentra. Es la única forma de cubrir un 
 no se ve desde afuera.
 
 **3. Sacarle el filtro de pago a una fuente.** El autotest pasa una oferta sintética por
-cada una de las tres y verifica que las tres la descarten. Si alguien refactoriza una
+cada una de las cuatro y verifica que las cuatro la descarten. Si alguien refactoriza una
 fuente y se salta el filtro, falla ahí.
 
 Las verificaciones corren sin red y sin enviar nada:
@@ -147,7 +159,8 @@ revisarlo no es un invariante.
 Un detalle de diseño de esas guardias: los montos de prueba son **relativos al umbral
 configurado**, no cifras fijas. Si estuvieran escritos a mano, bajar el piso de sueldo a
 propósito rompería el autotest, y lo que la guardia tiene que cuidar es la regla ("manda el
-techo del rango"), no el número.
+techo del rango"), no el número. Lo mismo con el part time: los montos salen del piso de
+part time y las tarifas por hora de prueba, de ese piso y de las horas por semana.
 
 ## Cómo usarlo
 
@@ -179,9 +192,9 @@ fuera del control de versiones:
 
 | Sección | Qué contiene |
 |---|---|
-| `pago` | umbral, si el part time pasa libre, las dos listas de empresas, los términos que identifican un cargo de nivel analyst |
+| `pago` | piso de full time, piso de part time, horas por semana del part time, las dos listas de empresas, los términos que identifican un cargo de nivel analyst |
 | `match` | categorías, palabras de rol, stack, títulos a descartar, seniority bloqueado, ubicaciones aceptadas |
-| `fuentes` | qué fuentes están activas, las búsquedas de LinkedIn, el registro de empresas con su ATS |
+| `fuentes` | qué fuentes están activas, las búsquedas de LinkedIn, el registro de empresas con su ATS, el país, las consultas de Himalayas, las categorías de Arc y las listas de ruido de contratos |
 
 Si `perfil.json` no existe, el bot corre con `perfil.example.json`, que sí está
 versionado. El repo funciona recién clonado, pero con un perfil que no es el de nadie.
@@ -205,7 +218,7 @@ versionado. El repo funciona recién clonado, pero con un perfil que no es el de
 ## Qué no hace
 
 No postula, no arma currículos, no puntúa candidatos, no usa un modelo de lenguaje. Lee
-tres fuentes, aplica una regla escrita a mano y manda un mensaje. Todo lo que descarta se
+cuatro fuentes, aplica una regla escrita a mano y manda un mensaje. Todo lo que descarta se
 puede explicar en una frase, que es justo lo que uno quiere de un filtro que corre solo.
 
 ## Licencia

@@ -9,6 +9,9 @@ Uso:
     python alertas_empleos.py --test     # envia un mensaje de prueba a Telegram
     python alertas_empleos.py --resumen  # muestra en consola lo que enviaria, sin marcar visto
     python alertas_empleos.py --autotest # verifica la regla de pago (sin red); falla con exit 1
+
+Ojo con --resumen seguido: la API de GetOnBoard limita si se la consulta muchas veces y la
+corrida sale corta (se auto-sana en la siguiente).
 """
 
 import json
@@ -33,6 +36,12 @@ try:
 except Exception:
     EMPRESAS_ENABLED = False
 
+try:
+    import fuente_contratos
+    CONTRATOS_ENABLED = True
+except Exception:
+    CONTRATOS_ENABLED = False
+
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = BASE_DIR / "config.json"
 SEEN_PATH = BASE_DIR / "seen_jobs.json"
@@ -48,7 +57,8 @@ import perfil
 from perfil import (                                            # noqa: E402
     CATEGORIES, ROLE_KEYWORDS, STACK_KEYWORDS, NEGATIVE_TITLE,
     SENIORITY_BLOCK_IDS, LOCATION_OK_TERMS,
-    MIN_SALARY_USD_FULLTIME, PART_TIME_PASA_SIEMPRE, PART_TIME_TERMS,
+    MIN_SALARY_USD_FULLTIME, MIN_SALARY_USD_PARTTIME, HORAS_MES_PART_TIME,
+    PART_TIME_TERMS,
     ANALYST_TIER_TERMS, SENIOR_TITLE_TERMS,
     EMPRESAS_PAGAN_BIEN, EMPRESAS_NO_CALIFICAN,
     GOB_ACTIVA, PER_PAGE, MAX_PAGES,
@@ -243,13 +253,13 @@ def es_nivel_analyst(title):
 def filtro_pago(title, company, min_salary, max_salary, part_time):
     """Regla unica de pago para todas las fuentes. Devuelve (ok, motivo).
 
-    - Part time: pasa siempre si el perfil lo permite (media jornada a cualquier sueldo).
-    - Full time con sueldo publicado: el techo del rango debe llegar al umbral.
-    - Full time sin sueldo publicado: pasa salvo que sea cargo nivel analyst
-      en una empresa que no esta en la lista de las que pagan bien.
+    - Con sueldo publicado: el techo del rango debe llegar al umbral de su jornada
+      (MIN_SALARY_USD_FULLTIME o MIN_SALARY_USD_PARTTIME).
+    - Sin sueldo publicado: pasa salvo que sea cargo nivel analyst en una empresa
+      que no esta en la lista de las que pagan bien. Igual para las dos jornadas.
     """
-    if part_time and PART_TIME_PASA_SIEMPRE:
-        return True, "part time"
+    jornada = "part time" if part_time else "full time"
+    umbral = MIN_SALARY_USD_PARTTIME if part_time else MIN_SALARY_USD_FULLTIME
 
     techo = None
     for v in (max_salary, min_salary):
@@ -257,9 +267,9 @@ def filtro_pago(title, company, min_salary, max_salary, part_time):
             techo = v
             break
     if techo is not None:
-        if techo < MIN_SALARY_USD_FULLTIME:
-            return False, f"full time bajo umbral ({int(techo)} USD)"
-        return True, "sueldo sobre umbral"
+        if techo < umbral:
+            return False, f"{jornada} bajo umbral ({int(techo)} USD)"
+        return True, f"{jornada} sobre umbral"
 
     if es_nivel_analyst(title) and not empresa_paga_bien(company):
         return False, "analyst sin sueldo publicado y empresa fuera de la lista"
@@ -297,7 +307,9 @@ def score_job(job):
     mod = modality_id(job)
     if mod == MODALITY_INTERNSHIP:
         return False, 0, "practica/internship"
-    part_time = (mod == MODALITY_PART_TIME) or es_part_time(title)
+    # Freelance se mide con el umbral de part time: se puede tomar sin dejar otro
+    # trabajo. El mensaje igual lo rotula "Freelance".
+    part_time = (mod in (MODALITY_PART_TIME, MODALITY_FREELANCE)) or es_part_time(title)
     ok_pago, motivo_pago = filtro_pago(
         title, company_name(job), a.get("min_salary"), a.get("max_salary"), part_time)
     if not ok_pago:
@@ -484,6 +496,76 @@ def build_message_empresa(job):
     return body
 
 
+# ------------------------------------------------------------------------------
+# Scoring y mensaje para part time y contratos por hora (Himalayas, Arc)
+# ------------------------------------------------------------------------------
+
+def sueldo_mensual_contrato(job):
+    """(min, max) en USD al mes. La tarifa por hora se lleva a mensual con
+    HORAS_MES_PART_TIME (horas por semana del perfil x 52 / 12)."""
+    mn, mx = job.get("salary_min"), job.get("salary_max")
+    if job.get("salary_period") == "hourly":
+        mn = mn * HORAS_MES_PART_TIME if isinstance(mn, (int, float)) else None
+        mx = mx * HORAS_MES_PART_TIME if isinstance(mx, (int, float)) else None
+    elif job.get("salary_period") != "monthly":
+        mn = mx = None
+    return mn, mx
+
+
+def score_contrato(job):
+    title = (job.get("title", "") or "").lower()
+    blob = f"{title} {job.get('company','')} {job.get('desc','')}".lower()
+
+    if tiene_negativo(title):
+        return False, 0
+    if fuente_contratos.es_ruido(job.get("company", ""), title):
+        return False, 0
+    if not any(kw in title for kw in ROLE_KEYWORDS):
+        return False, 0
+
+    # Por hora o part time declarado: umbral de part time. Un contrato con sueldo
+    # mensual o anual es jornada completa y se mide con el de full time.
+    part_time = bool(job.get("part_time")) or job.get("salary_period") == "hourly"
+    mn, mx = sueldo_mensual_contrato(job)
+    ok_pago, _ = filtro_pago(title, job.get("company", ""), mn, mx, part_time)
+    if not ok_pago:
+        return False, 0
+
+    score = 5
+    if part_time:
+        score += 3
+    score += sum(2 for kw in STACK_KEYWORDS if kw in blob)
+    if any(k in title for k in ["lead", "manager", "head", "senior", "sr "]):
+        score += 4
+    return True, score
+
+
+def build_message_contrato(job):
+    title = job.get("title", "Sin titulo")
+    company = job.get("company", "")
+    body = f"🎯 <b>{esc(title)}</b>"
+    if company:
+        body += f"\n🏢 {esc(company)}"
+    if job.get("location"):
+        body += f"\n📍 {esc(job['location'])}"
+    mn, mx = job.get("salary_min"), job.get("salary_max")
+    if job.get("salary_period") == "hourly" and (mn or mx):
+        rango = f"{mn or '?'}-{mx or '?'} USD/h"
+        mmn, mmx = sueldo_mensual_contrato(job)
+        horas_sem = round(HORAS_MES_PART_TIME * 12 / 52)
+        sal = (f"{rango} (~{int(mmx or mmn):,} USD/mes a {horas_sem} h/sem)"
+               .replace(",", "."))
+    elif mn or mx:
+        sal = f"{int(mn or 0):,}-{int(mx or 0):,} USD/mes".replace(",", ".")
+    else:
+        sal = "sueldo no publicado"
+    etiqueta = "⏱ PART TIME" if job.get("part_time") else "Contrato"
+    body += f"\n💰 {etiqueta} · {esc(sal)}"
+    body += (f"\n🗂 {esc(job.get('source', ''))}\n🔗 "
+             f"<a href=\"{esc(job.get('url', ''))}\">Ver y postular</a>")
+    return body
+
+
 def gather_matches():
     """Devuelve lista de dicts normalizados: {score,id,title,url,message,source}."""
     entries = {}
@@ -552,6 +634,27 @@ def gather_matches():
         except Exception as e:
             log(f"  aviso: fuente Empresas fallo por completo, se omite: {e}")
 
+    # --- Part time y contratos por hora (Himalayas, Arc) ---
+    if CONTRATOS_ENABLED and perfil.CONTRATOS_ACTIVA:
+        try:
+            ct_jobs = fuente_contratos.fetch_all(logger=log)
+            ct_ok = 0
+            for job in ct_jobs:
+                ok, score = score_contrato(job)
+                if ok:
+                    entries[job["id"]] = {
+                        "score": score,
+                        "id": job["id"],
+                        "title": job.get("title", ""),
+                        "url": job.get("url", ""),
+                        "message": build_message_contrato(job),
+                        "source": job.get("source", "Contratos"),
+                    }
+                    ct_ok += 1
+            log(f"Contratos: {ct_ok} calzan con el perfil.")
+        except Exception as e:
+            log(f"  aviso: fuente Contratos fallo por completo, se omite: {e}")
+
     matches = sorted(entries.values(), key=lambda x: x["score"], reverse=True)
     log(f"TOTAL: {len(matches)} ofertas calzan con el perfil (todas las fuentes).")
     return matches
@@ -584,7 +687,7 @@ def autotest():
     Cubre los tres errores que ya se cometieron una vez:
       1. meter en EMPRESAS_PAGAN_BIEN empresas que no pagan eso a nivel analyst,
       2. detectar part time leyendo la descripcion (falso positivo que salta el umbral),
-      3. sacarle el filtro de pago a alguna de las tres fuentes.
+      3. sacarle el filtro de pago a alguna de las cuatro fuentes.
     """
     fallas = []
 
@@ -616,6 +719,12 @@ def autotest():
     # la regla ("manda el techo del rango"), no la cifra.
     U = MIN_SALARY_USD_FULLTIME
     bajo, justo, alto = U - 800, U, U + 700
+    # Part time, freelance y contratos: su propio piso, tambien relativo. Los casos
+    # que distinguen un piso del otro solo tienen sentido si el de part time es mas
+    # bajo; si el perfil los iguala, se omiten.
+    UP = MIN_SALARY_USD_PARTTIME
+    pt_bajo, pt_alto = int(UP * 0.6), UP + 300
+    entre_pisos = (UP + U) // 2 if UP < U else None   # pasa part time, no full time
 
     casos = [
         # Full time con sueldo publicado: manda el techo del rango
@@ -624,14 +733,24 @@ def autotest():
         ("BI Lead", "Acme", bajo, justo, False, True),
         ("Data Engineer", "Acme", justo, alto, False, True),
         ("Data Engineer", "Acme", bajo, None, False, False),   # solo minimo, bajo umbral
-        # Part time: entra a cualquier sueldo
-        ("Data Analyst (Part Time)", "Acme", bajo - 500, bajo, True, True),
-        ("Analista BI media jornada", "Acme", None, None, True, True),
+        # Part time: umbral propio, con la misma regla del techo
+        ("Data Analyst (Part Time)", "Acme", pt_bajo - 300, pt_bajo, True, False),
+        ("Data Analyst (Part Time)", "Acme", UP - 500, UP, True, True),
+        ("BI Lead part time", "Acme", pt_alto, None, True, True),
+        # Part time sin sueldo: misma regla de nivel y empresa que full time
+        ("Analista BI media jornada", "Acme", None, None, True, False),
+        ("Senior Data Analyst part time", "Acme", None, None, True, True),
         # Sin sueldo publicado: decide el nivel del cargo y la empresa
         ("Senior Data Analyst", "Empresa Desconocida", None, None, False, True),
         ("BI Manager", "Empresa Desconocida", None, None, False, True),
         ("Analista de datos", "Empresa Desconocida", None, None, False, False),
     ]
+    if entre_pisos:
+        # Un sueldo que basta para part time no basta para full time
+        casos.append(("Data Engineer", "Acme", UP, entre_pisos, False, False))
+        casos.append(("Data Engineer part time", "Acme", UP, entre_pisos, True, True))
+    else:
+        omitidos += 2
     if paga_bien:
         # Un analyst sin sueldo pasa solo si la empresa esta en la lista.
         casos.append(("Data Analyst", paga_bien, None, None, False, True))
@@ -660,7 +779,7 @@ def autotest():
     # time mencionan jornadas de pasada y eso saltaria el umbral. Se revisa el codigo.
     try:
         fuentes = [Path(__file__).read_text(encoding="utf-8")]
-        for extra in ("fuente_linkedin.py", "fuente_empresas.py"):
+        for extra in ("fuente_linkedin.py", "fuente_empresas.py", "fuente_contratos.py"):
             p = BASE_DIR / extra
             if p.exists():
                 fuentes.append(p.read_text(encoding="utf-8"))
@@ -672,16 +791,22 @@ def autotest():
     except Exception as e:
         fallas.append(f"  no se pudo revisar el uso de es_part_time: {e}")
 
-    # --- 4. Las TRES fuentes deben aplicar la regla, no solo GetOnBoard ---------
+    # --- 4. Las CUATRO fuentes deben aplicar la regla, no solo GetOnBoard -------
     # (job sintetico, empresa fuera de la lista, sueldo bajo o ausente)
     e2e = [
         ("GetOnBoard sueldo bajo",
          lambda: score_job(_job_gob("Data Engineer", mn=bajo - 300, mx=bajo))[0], False),
         ("GetOnBoard sobre umbral",
          lambda: score_job(_job_gob("Data Engineer", mn=justo, mx=alto))[0], True),
-        ("GetOnBoard part time por modality",
-         lambda: score_job(_job_gob("Data Analyst", mn=bajo - 600, mx=bajo - 300,
+        ("GetOnBoard part time por modality, bien pagado",
+         lambda: score_job(_job_gob("Data Analyst", mn=UP - 300, mx=pt_alto,
                                     modality=MODALITY_PART_TIME))[0], True),
+        ("GetOnBoard part time por modality, mal pagado",
+         lambda: score_job(_job_gob("Data Analyst", mn=pt_bajo - 300, mx=pt_bajo,
+                                    modality=MODALITY_PART_TIME))[0], False),
+        ("GetOnBoard freelance mal pagado",
+         lambda: score_job(_job_gob("Data Engineer", mn=pt_bajo - 300, mx=pt_bajo,
+                                    modality=MODALITY_FREELANCE))[0], False),
         ("GetOnBoard internship",
          lambda: score_job(_job_gob("Data Analyst", mn=justo, mx=alto,
                                     modality=MODALITY_INTERNSHIP))[0], False),
@@ -708,6 +833,46 @@ def autotest():
                                            "location": "Santiago, Chile", "desc": ""})[0], True))
     else:
         omitidos += 2
+    if entre_pisos:
+        e2e.append(("GetOnBoard freelance usa el umbral de part time",
+                    lambda: score_job(_job_gob("Data Engineer", mn=UP, mx=entre_pisos,
+                                               modality=MODALITY_FREELANCE))[0], True))
+    else:
+        omitidos += 1
+
+    if CONTRATOS_ENABLED:
+        # Tarifas por hora derivadas del piso de part time y de las horas del perfil:
+        # una holgada sobre el piso y otra claramente bajo.
+        h = HORAS_MES_PART_TIME
+        hr_ok = (int(UP / h) + 1, int(UP / h * 1.8) + 1)
+        hr_bajo = (int(UP / h * 0.5), int(UP / h * 0.7))
+
+        def _ct(title, mn, mx, periodo="hourly", company="Acme", pt=False):
+            return score_contrato({"title": title, "company": company, "desc": "",
+                                   "salary_min": mn, "salary_max": mx,
+                                   "salary_period": periodo, "part_time": pt})[0]
+        e2e += [
+            ("Contrato por hora sobre el piso de part time pasa",
+             lambda: _ct("Senior Data Engineer", *hr_ok), True),
+            ("Contrato por hora bajo el piso no llega",
+             lambda: _ct("Data Engineer", *hr_bajo), False),
+            ("Part time mensual sobre el piso pasa",
+             lambda: _ct("BI Lead", UP - 500, pt_alto, "monthly", pt=True), True),
+            ("Contrato sin rol de datos se descarta",
+             lambda: _ct("Salesforce Developer", *hr_ok), False),
+        ]
+        if entre_pisos:
+            e2e.append(("Contrato mensual es full time y no llega con sueldo de part time",
+                        lambda: _ct("BI Lead", UP, entre_pisos, "monthly"), False))
+        else:
+            omitidos += 1
+        if perfil.EMPRESAS_RUIDO:
+            ruido = perfil.EMPRESAS_RUIDO[0]
+            e2e.append(("Reclutador de entrenamiento de IA se descarta",
+                        lambda: _ct("Business Intelligence & Analytics Lead", *hr_ok,
+                                    company=f"{ruido.title()} Inc."), False))
+        else:
+            omitidos += 1
 
     for nombre, fn, esperado in e2e:
         try:
@@ -724,10 +889,10 @@ def autotest():
             log(f)
         sys.exit(1)
     resumen = (f"Autotest ok ({PERFIL_ORIGEN.name}): {len(casos)} casos de la regla de "
-               f"pago + {len(e2e)} de las tres fuentes + integridad de las listas.")
+               f"pago + {len(e2e)} de las cuatro fuentes + integridad de las listas.")
     if omitidos:
-        resumen += (f" {omitidos} casos omitidos: el perfil trae vacia alguna de las dos "
-                    "listas de empresas.")
+        resumen += (f" {omitidos} casos omitidos: el perfil trae vacia alguna lista de "
+                    "empresas o el piso de part time no es mas bajo que el de full time.")
     log(resumen)
 
 

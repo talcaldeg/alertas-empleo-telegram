@@ -19,8 +19,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Regla de pago (umbral full time / part time libre)
+      - name: Regla de pago (umbral full time / umbral part time)
         run: python alertas_empleos.py --autotest
 
       - name: Los modulos de las fuentes importan bien
-        run: python -c "import alertas_empleos, fuente_linkedin, fuente_empresas"
+        run: python -c "import alertas_empleos, fuente_linkedin, fuente_empresas, fuente_contratos"

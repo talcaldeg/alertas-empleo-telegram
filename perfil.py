@@ -39,6 +39,13 @@ def _lista(v):
     return v or []
 
 
+def _valor(v, defecto=None):
+    """Acepta 2500 o {"_": "doc", "valor": 2500}."""
+    if isinstance(v, dict):
+        return v.get("valor", defecto)
+    return defecto if v is None else v
+
+
 def _cargar():
     ruta = PERFIL_PATH if PERFIL_PATH.exists() else EJEMPLO_PATH
     if not ruta.exists():
@@ -58,7 +65,12 @@ _fuentes = P["fuentes"]
 
 # --- Regla de pago ------------------------------------------------------------
 MIN_SALARY_USD_FULLTIME = _pago["min_salary_usd_fulltime"]
-PART_TIME_PASA_SIEMPRE = _pago.get("part_time_pasa_siempre", True)
+# Part time, freelance y contratos por hora tienen su propio piso. Un perfil antiguo
+# sin este campo cae al de full time: es el lado conservador (llega menos, no mas).
+MIN_SALARY_USD_PARTTIME = _valor(_pago.get("min_salary_usd_parttime"),
+                                 MIN_SALARY_USD_FULLTIME)
+# Horas al mes de un part time, para llevar una tarifa por hora a mensual.
+HORAS_MES_PART_TIME = _valor(_pago.get("horas_semana_part_time"), 20) * 52 / 12
 PART_TIME_TERMS = _lista(_pago["part_time_terms"])
 ANALYST_TIER_TERMS = _lista(_pago["analyst_tier_terms"])
 SENIOR_TITLE_TERMS = _lista(_pago["senior_title_terms"])
@@ -89,3 +101,13 @@ EMPRESAS_CFG = _fuentes.get("empresas", {})
 EMPRESAS_ACTIVA = EMPRESAS_CFG.get("activa", True)
 EMPRESAS_REGISTRO = [tuple(e) for e in _lista(EMPRESAS_CFG.get("registro", []))]
 EIGHTFOLD_QUERIES = _lista(EMPRESAS_CFG.get("eightfold_queries", []))
+
+CONTRATOS = _fuentes.get("contratos", {})
+CONTRATOS_ACTIVA = CONTRATOS.get("activa", False)
+CONTRATOS_PAIS_ISO = CONTRATOS.get("pais_iso", "")
+CONTRATOS_PAIS_NOMBRE = CONTRATOS.get("pais_nombre", "")
+HIMALAYAS_QUERIES = _lista(CONTRATOS.get("himalayas_queries", []))
+HIMALAYAS_TIPOS = _lista(CONTRATOS.get("himalayas_tipos", []))
+ARC_SLUGS = _lista(CONTRATOS.get("arc_slugs", []))
+EMPRESAS_RUIDO = [e.lower() for e in _lista(CONTRATOS.get("empresas_ruido", []))]
+TITULOS_RUIDO = [t.lower() for t in _lista(CONTRATOS.get("titulos_ruido", []))]

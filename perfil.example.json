@@ -9,7 +9,21 @@
   "pago": {
     "_": "La única regla que decide si una oferta le llega al teléfono. Ver README.",
     "min_salary_usd_fulltime": 3500,
-    "part_time_pasa_siempre": true,
+    "min_salary_usd_parttime": {
+      "_": [
+        "Piso mensual para part time, freelance y contratos por hora. Más bajo que el de",
+        "full time porque se puede sumar a otro trabajo. Sin sueldo publicado aplica la",
+        "misma regla de nivel y empresa que el full time."
+      ],
+      "valor": 2500
+    },
+    "horas_semana_part_time": {
+      "_": [
+        "Para llevar una tarifa por hora a mensual: tarifa x horas_semana x 52 / 12.",
+        "Con 20 h/semana, 30 USD/h son ~2.600 USD/mes."
+      ],
+      "valor": 20
+    },
     "part_time_terms": [
       "part time", "part-time", "parttime", "half time", "half-time",
       "medio tiempo", "media jornada", "jornada parcial", "tiempo parcial",
@@ -140,6 +154,34 @@
         ["Mural",        "ashby",      "mural"]
       ],
       "eightfold_queries": ["data", "analytics", "business intelligence"]
+    },
+    "contratos": {
+      "_": [
+        "Part time y contratos por hora en bolsas internacionales, sin login. Himalayas:",
+        "API pública de búsqueda, filtrada por país y tipo de empleo. Arc.dev: JSON de la",
+        "página de cada categoría; solo avisos propios de Arc de tipo 'contract'. La",
+        "tarifa por hora se mide con el piso de part time."
+      ],
+      "activa": true,
+      "pais_iso": "CL",
+      "pais_nombre": "Chile",
+      "himalayas_queries": ["data", "business intelligence", "analytics", "dbt",
+                            "power bi", "looker", "bigquery"],
+      "himalayas_tipos": ["part_time", "contractor"],
+      "arc_slugs": ["data-engineer", "data-analyst", "data-scientist"],
+      "empresas_ruido": {
+        "_": [
+          "Reclutadores de entrenamiento de IA y anotación: publican decenas de",
+          "'contract' con títulos de datos que no son trabajo de BI. Substring, minúsculas."
+        ],
+        "lista": [
+          "xperteez", "micro1", "mercor", "outlier", "peroptyx", "alignerr",
+          "dataannotation", "data annotation", "remotasks", "scale ai",
+          "invisible technologies", "meridial", "toloka", "appen", "telus"
+        ]
+      },
+      "titulos_ruido": ["domain expert", "ai trainer", "annotation", "annotator",
+                        "data collection", "teaching expert", "rater", "evaluator"]
     }
   }
 }
