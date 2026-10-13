@@ -162,6 +162,14 @@ propósito rompería el autotest, y lo que la guardia tiene que cuidar es la reg
 techo del rango"), no el número. Lo mismo con el part time: los montos salen del piso de
 part time y las tarifas por hora de prueba, de ese piso y de las horas por semana.
 
+Los títulos, las empresas y los lugares de prueba tampoco van escritos: se arman con las
+palabras del perfil cargado y cada uno se valida con las mismas funciones del filtro. Una
+versión anterior probaba con "Data Engineer" y "Santiago, Chile", y con un perfil de
+finanzas el autotest fallaba sin que la regla estuviera rota; como corre antes de cada
+envío, el bot quedaba detenido. Lo que un perfil no permite armar (no define nivel
+analyst, no tiene ciudad) se omite, y la salida dice cuántos casos se omitieron. Si
+ninguna palabra de rol sirve de título, falla: con ese perfil no pasaría ninguna oferta.
+
 ## Cómo usarlo
 
 ```bash
@@ -193,11 +201,25 @@ fuera del control de versiones:
 | Sección | Qué contiene |
 |---|---|
 | `pago` | piso de full time, piso de part time, horas por semana del part time, las dos listas de empresas, los términos que identifican un cargo de nivel analyst |
-| `match` | categorías, palabras de rol, stack, títulos a descartar, seniority bloqueado, ubicaciones aceptadas |
-| `fuentes` | qué fuentes están activas, las búsquedas de LinkedIn, el registro de empresas con su ATS, el país, las consultas de Himalayas, las categorías de Arc y las listas de ruido de contratos |
+| `match` | categorías, palabras de rol, stack, títulos a descartar, seniority bloqueado, ubicación (país, ciudad y términos de remoto) y los bonos de puntaje por rubro y por stack principal |
+| `fuentes` | qué fuentes están activas, las búsquedas de LinkedIn, el registro de empresas con su ATS y el lugar que se le pide a Eightfold, el país, las consultas de Himalayas, las categorías de Arc y las listas de ruido de contratos |
 
 Si `perfil.json` no existe, el bot corre con `perfil.example.json`, que sí está
 versionado. El repo funciona recién clonado, pero con un perfil que no es el de nadie.
+
+**Ubicación.** `match.ubicacion` separa `pais_terms` de `ciudad_terms` porque el nombre
+de una ciudad se repite en otros países (hay un Santiago en México y otro en España).
+LinkedIn casi siempre escribe el país, así que ahí la ciudad sola no basta; GetOnBoard y
+las páginas de empresa a veces traen solo la ciudad, y ahí valen las dos listas. La
+excepción medida de LinkedIn es el rótulo "Área metropolitana de Santiago", sin país (3
+de 93 tarjetas en una corrida del 13-oct-2026): como no se confunde con otro lugar, va
+entero en `pais_terms`. Una oferta remota pasa siempre. Este bloque no tiene valor por defecto: un `perfil.json` que no lo
+traiga (los anteriores usaban `location_ok_terms`, que el código nunca leyó) se detiene
+con un mensaje que dice qué copiar del ejemplo.
+
+**Puntaje.** `bono_rubro_terms` y `bono_stack_terms` no filtran nada: suman puntos, y el
+puntaje solo decide en qué orden salen los avisos de una misma corrida. Vacías, no hay
+bono.
 
 ## Decisiones de implementación
 

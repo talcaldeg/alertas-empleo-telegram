@@ -109,7 +109,39 @@
       "_": "IDs de seniority de GetOnBoard a descartar. 1 = sin experiencia, 2 = junior.",
       "lista": [1, 2]
     },
-    "location_ok_terms": ["chile", "santiago", "latam", "latin america", "americas", "remote"]
+    "ubicacion": {
+      "_": [
+        "Dónde acepta trabajar. Una oferta pasa si es remota o si su ubicación trae su",
+        "país o su ciudad, como los escriben los avisos. Van separados porque el nombre",
+        "de una ciudad se repite en otros países. LinkedIn casi siempre escribe el país,",
+        "así que ahí solo se mira pais_terms; GetOnBoard y las páginas de empresa a veces",
+        "traen solo la ciudad, y ahí valen los dos.",
+        "pais_terms admite también un lugar escrito de forma inequívoca: LinkedIn rotula",
+        "algunas tarjetas 'Área metropolitana de Santiago', sin país (3 de 93 el",
+        "13-oct-2026), y sin esa entrada se pierden.",
+        "remoto_terms: palabras que, en el texto del aviso, lo dan por remoto para usted.",
+        "Substring, en minúsculas. Con las dos primeras vacías solo pasan las remotas."
+      ],
+      "pais_terms": ["chile", "área metropolitana de santiago"],
+      "ciudad_terms": ["santiago"],
+      "remoto_terms": ["remote", "remoto", "latam", "latin america"]
+    },
+    "bono_rubro_terms": {
+      "_": [
+        "Rubros donde su experiencia pesa más. No filtran: suman puntaje, y el puntaje",
+        "solo ordena los avisos dentro de una corrida. Se miran en GetOnBoard, LinkedIn",
+        "y páginas de empresa. Vacía = sin bono."
+      ],
+      "lista": ["retail", "consumo masivo", "ecommerce", "e-commerce"]
+    },
+    "bono_stack_terms": {
+      "_": [
+        "Su stack principal, el subconjunto de stack_keywords que más quiere ver. Suma",
+        "puntaje una vez si aparece alguna. Solo GetOnBoard, que es la única fuente que",
+        "siempre trae la descripción. Vacía = sin bono."
+      ],
+      "lista": ["bigquery", "dbt", "looker", "gcp", "power bi"]
+    }
   },
 
   "fuentes": {
@@ -131,7 +163,14 @@
         ["data analyst", "Latin America"]
       ],
       "pages_per_search": 2,
-      "time_posted": "r604800"
+      "time_posted": "r604800",
+      "ubicacion_extra_terms": {
+        "_": [
+          "Se suman a match.ubicacion.remoto_terms solo en LinkedIn: sus búsquedas ya",
+          "van acotadas por lugar, así que un híbrido que salga de ahí se deja pasar."
+        ],
+        "lista": ["hybrid", "híbrido"]
+      }
     },
     "empresas": {
       "_": [
@@ -153,7 +192,8 @@
         ["Belvo",        "ashby",      "belvo"],
         ["Mural",        "ashby",      "mural"]
       ],
-      "eightfold_queries": ["data", "analytics", "business intelligence"]
+      "eightfold_queries": ["data", "analytics", "business intelligence"],
+      "eightfold_location": "Chile"
     },
     "contratos": {
       "_": [

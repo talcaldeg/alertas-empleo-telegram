@@ -83,7 +83,21 @@ ROLE_KEYWORDS = _lista(_match["role_keywords"])
 STACK_KEYWORDS = _lista(_match["stack_keywords"])
 NEGATIVE_TITLE = _lista(_match["negative_title"])
 SENIORITY_BLOCK_IDS = set(_lista(_match["seniority_block_ids"]))
-LOCATION_OK_TERMS = _lista(_match["location_ok_terms"])
+# Ubicacion: sin default a proposito. Un default seria volver a escribir el pais de
+# alguien en el codigo, y un perfil antiguo cambiaria de filtro sin avisar.
+if "ubicacion" not in _match:
+    raise SystemExit(
+        f"ERROR: a {ORIGEN.name} le falta match.ubicacion (pais_terms, ciudad_terms y "
+        "remoto_terms). Reemplaza a location_ok_terms; copie el bloque desde "
+        "perfil.example.json."
+    )
+_ubicacion = _match["ubicacion"]
+UBICACION_PAIS_TERMS = [t.lower() for t in _lista(_ubicacion.get("pais_terms"))]
+UBICACION_CIUDAD_TERMS = [t.lower() for t in _lista(_ubicacion.get("ciudad_terms"))]
+UBICACION_REMOTO_TERMS = [t.lower() for t in _lista(_ubicacion.get("remoto_terms"))]
+# Bonos de puntaje. Solo ordenan los avisos de una corrida; vacios = sin bono.
+BONO_RUBRO_TERMS = [t.lower() for t in _lista(_match.get("bono_rubro_terms"))]
+BONO_STACK_TERMS = [t.lower() for t in _lista(_match.get("bono_stack_terms"))]
 
 # --- Fuentes ------------------------------------------------------------------
 GOB = _fuentes.get("getonboard", {})
@@ -96,11 +110,15 @@ LINKEDIN_ACTIVA = LINKEDIN.get("activa", True)
 LINKEDIN_SEARCHES = [tuple(s) for s in _lista(LINKEDIN.get("searches", []))]
 LINKEDIN_PAGES = LINKEDIN.get("pages_per_search", 2)
 LINKEDIN_TIME_POSTED = LINKEDIN.get("time_posted", "r604800")
+LINKEDIN_UBICACION_EXTRA_TERMS = [
+    t.lower() for t in _lista(LINKEDIN.get("ubicacion_extra_terms"))]
 
 EMPRESAS_CFG = _fuentes.get("empresas", {})
 EMPRESAS_ACTIVA = EMPRESAS_CFG.get("activa", True)
 EMPRESAS_REGISTRO = [tuple(e) for e in _lista(EMPRESAS_CFG.get("registro", []))]
 EIGHTFOLD_QUERIES = _lista(EMPRESAS_CFG.get("eightfold_queries", []))
+# Lugar que se le pasa a la busqueda de Eightfold. Vacio = sin filtro de lugar.
+EIGHTFOLD_LOCATION = EMPRESAS_CFG.get("eightfold_location", "")
 
 CONTRATOS = _fuentes.get("contratos", {})
 CONTRATOS_ACTIVA = CONTRATOS.get("activa", False)

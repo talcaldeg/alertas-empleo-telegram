@@ -1,50 +1,49 @@
 # Reglas de este repo
 
 Este bot filtra ofertas de empleo y las manda a Telegram. Lo que se escapa del filtro le
-llega a alguien al teléfono, así que las reglas de abajo no son estilo: son el producto.
-Las cubre `--autotest`, que corre en cada push y antes de cada corrida programada.
+llega a alguien al teléfono: las reglas de abajo son el producto. Las cubre `--autotest`,
+que corre en cada push y antes de cada corrida. El porqué de cada una está en el README.
 
 ## Invariantes (si tocas el filtro, corre el autotest)
 
-1. **El perfil no se hardcodea.** Umbral de sueldo, listas de empresas, palabras de rol,
-   búsquedas de LinkedIn y registro de ATS viven en `perfil.json` (o en
-   `perfil.example.json` como fallback), nunca en el código. Si necesitas un parámetro
-   nuevo, agrégalo al JSON y expórtalo desde `perfil.py`.
+1. **El perfil no se hardcodea.** Sueldo, empresas, palabras de rol, ubicación, bonos de
+   puntaje, búsquedas y registro de ATS viven en `perfil.json` (fallback:
+   `perfil.example.json`) y se exportan desde `perfil.py`. Un país, ciudad, rubro o
+   herramienta escrito en un `.py` es un defecto, también en el autotest.
+   `match.ubicacion` no tiene valor por defecto.
 
-2. **Part time tiene su propio piso** (`min_salary_usd_parttime`, más bajo que el de full
-   time). Freelance de GetOnBoard y contratos por hora (Himalayas, Arc) se miden con ese
-   mismo piso; la tarifa por hora se lleva a mensual con `horas_semana_part_time`
-   (`HORAS_MES_PART_TIME` en `perfil.py`). Sin sueldo publicado aplica la misma regla de
-   nivel y empresa que el full time. No poner "part-time" en `negative_title`.
+2. **LinkedIn mide la ubicación con `es_pais()`, no con `es_local()`**: la ciudad sola
+   deja pasar homónimas de otros países. Un rótulo local sin país se agrega entero a
+   `pais_terms`; no se afloja la regla.
 
-3. **El part time se detecta por el título o por el campo `modality`, nunca por la
-   descripción.** Los avisos full time mencionan "media jornada" o "por horas" de pasada,
-   y un falso positivo se salta el umbral.
-4. **`empresas_pagan_bien` significa "acá hasta un cargo analyst supera el umbral".** No
-   es "empresa grande" ni "empresa conocida". `empresas_no_califican` gana por sobre la
-   otra, y el autotest falla si una empresa queda en las dos listas.
+3. **Part time tiene su propio piso** (`min_salary_usd_parttime`). Freelance y contratos
+   por hora usan ese piso; la tarifa por hora se lleva a mensual con
+   `horas_semana_part_time`. No poner "part-time" en `negative_title`.
 
-5. **Las cuatro fuentes aplican la misma regla.** `score_job` (GetOnBoard),
-   `score_linkedin`, `score_empresa` y `score_contrato` deben llamar a `filtro_pago()`. El autotest
-   lo prueba en cada una.
+4. **El part time se detecta por el título o por `modality`, nunca por la descripción.**
 
-6. **Los casos del autotest son relativos al umbral, no cifras fijas.** Bajar el piso de
-   sueldo o de part time, o cambiar las horas por semana, es legítimo y no debe romper la
-   guardia: las tarifas de prueba se derivan de ellos. Se cuida la regla, no el número.
+5. **`empresas_pagan_bien` significa "acá hasta un cargo analyst supera el umbral"**, no
+   "empresa grande". `empresas_no_califican` gana, y ninguna empresa va en las dos.
 
-7. **El bot se identifica.** Toda petición HTTP usa `perfil.USER_AGENT`; ninguna fuente
-   simula un navegador. Una fuente que no responda así se desactiva, no se disfraza.
+6. **Las cuatro fuentes llaman a `filtro_pago()`**: `score_job`, `score_linkedin`,
+   `score_empresa` y `score_contrato`.
+
+7. **Los casos del autotest salen del perfil cargado**: montos relativos al umbral;
+   títulos (`_titulos_de_prueba()`), empresas y lugares, de sus listas. Lo que un perfil
+   no permite armar se omite y se cuenta. Al tocarlo, correrlo también con un
+   `perfil.json` que no sea de datos, en una copia fuera del repo.
+
+8. **El bot se identifica.** Toda petición usa `perfil.USER_AGENT`; una fuente que no
+   responda así se desactiva, no se disfraza.
 
 ## Qué no versionar
 
-`config.json` (token de Telegram) y `perfil.json` (la búsqueda de trabajo de alguien)
-están en `.gitignore` a propósito. No forzarlos ni pegar sus valores en el README, un
-workflow o un commit. En la nube van como Secrets de
-GitHub Actions.
+`config.json` (token de Telegram) y `perfil.json` (la búsqueda de alguien) están en
+`.gitignore` a propósito. No forzarlos ni pegar sus valores en el README, un workflow o un
+commit. En la nube van como Secrets de GitHub Actions.
 
 ## Cómo probar
 
-- `--autotest` (sin red, lo que corre en CI) o `--resumen` (fuentes reales, sin marcar
-  visto); el uso completo, en el encabezado de `alertas_empleos.py`.
+- `--autotest` (sin red) o `--resumen` (fuentes reales, sin marcar visto).
 - Nunca correr sin flags para probar: eso **envía** a Telegram y marca las ofertas como
-  vistas, así que la corrida real ya no se las manda.
+  vistas.

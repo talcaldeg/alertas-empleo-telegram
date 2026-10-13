@@ -56,7 +56,10 @@ API_BASE = "https://www.getonbrd.com/api/v0"
 import perfil
 from perfil import (                                            # noqa: E402
     CATEGORIES, ROLE_KEYWORDS, STACK_KEYWORDS, NEGATIVE_TITLE,
-    SENIORITY_BLOCK_IDS, LOCATION_OK_TERMS,
+    SENIORITY_BLOCK_IDS,
+    UBICACION_PAIS_TERMS, UBICACION_CIUDAD_TERMS, UBICACION_REMOTO_TERMS,
+    LINKEDIN_UBICACION_EXTRA_TERMS,
+    BONO_RUBRO_TERMS, BONO_STACK_TERMS,
     MIN_SALARY_USD_FULLTIME, MIN_SALARY_USD_PARTTIME, HORAS_MES_PART_TIME,
     PART_TIME_TERMS,
     ANALYST_TIER_TERMS, SENIOR_TITLE_TERMS,
@@ -198,21 +201,50 @@ def seniority_label(job):
     return SENIORITY_MAP.get(sid, "n/d")
 
 
+def es_pais(texto):
+    """True si el texto nombra un pais de match.ubicacion.pais_terms."""
+    t = (texto or "").lower()
+    return any(term in t for term in UBICACION_PAIS_TERMS)
+
+
+def es_local(texto):
+    """True si el texto nombra el pais o la ciudad del perfil. La ciudad sola es mas
+    debil (su nombre se repite en otros paises): donde la fuente casi siempre escribe
+    el pais se usa es_pais()."""
+    t = (texto or "").lower()
+    return es_pais(t) or any(term in t for term in UBICACION_CIUDAD_TERMS)
+
+
+def es_remoto(texto, extra=()):
+    """True si el texto trae un termino de match.ubicacion.remoto_terms."""
+    t = (texto or "").lower()
+    return any(term in t for term in list(UBICACION_REMOTO_TERMS) + list(extra))
+
+
 def location_ok(job, blob):
     a = job.get("attributes", {})
     if a.get("remote"):
         return True
     for country in a.get("countries", []) or []:
         c = str(country.get("id", "") if isinstance(country, dict) else country).lower()
-        if "chile" in c or "remote" in c:
+        # "remote" aca es vocabulario de la API de GetOnBoard, no del perfil
+        if es_pais(c) or "remote" in c:
             return True
     cities = a.get("location_cities", {})
     city_list = cities.get("data", []) if isinstance(cities, dict) else (cities or [])
     for city in city_list:
         c = str(city.get("id", "") if isinstance(city, dict) else city).lower()
-        if "santiago" in c or "chile" in c:
+        if es_local(c):
             return True
-    return any(term in blob for term in ["chile", "santiago"])
+    return es_local(blob)
+
+
+def bono_rubro(blob):
+    return 4 if any(k in blob for k in BONO_RUBRO_TERMS) else 0
+
+
+def bono_stack(blob):
+    return 3 if any(k in blob for k in BONO_STACK_TERMS) else 0
 
 
 def modality_id(job):
@@ -296,7 +328,7 @@ def score_job(job):
     if sid in SENIORITY_BLOCK_IDS:
         return False, 0, f"seniority {SENIORITY_MAP.get(sid)}"
     if not location_ok(job, blob):
-        return False, 0, "fuera de Chile/remoto"
+        return False, 0, "fuera de la ubicacion del perfil"
 
     # Debe haber senal de rol en el titulo. Va antes del filtro de pago: es el descarte
     # mas selectivo y asi el motivo que queda en el log es el que de verdad manda.
@@ -321,10 +353,7 @@ def score_job(job):
     score += sum(2 for kw in STACK_KEYWORDS if kw in blob)
     if any(k in title for k in ["lead", "manager", "head", "senior"]):
         score += 4
-    if "retail" in blob or "consumo masivo" in blob or "ecommerce" in blob:
-        score += 4
-    if any(k in blob for k in ["bigquery", "dbt", "looker", "gcp", "power bi"]):
-        score += 3
+    score += bono_rubro(blob) + bono_stack(blob)
 
     return True, score, "match"
 
@@ -406,8 +435,10 @@ def score_linkedin(job):
 
     if tiene_negativo(title):
         return False, 0
-    # Solo Chile o remoto/LATAM (evita presencial en otros paises)
-    if "chile" not in loc and not any(k in blob for k in ["remote", "remoto", "hybrid", "híbrido", "latam", "latin america"]):
+    # Solo el pais del perfil o remoto (evita presencial en otros paises). LinkedIn
+    # casi siempre escribe el pais, asi que la ciudad sola no basta; un rotulo local
+    # sin pais va entero en pais_terms.
+    if not es_pais(loc) and not es_remoto(blob, LINKEDIN_UBICACION_EXTRA_TERMS):
         return False, 0
     if not any(kw in title for kw in ROLE_KEYWORDS):
         return False, 0
@@ -424,8 +455,7 @@ def score_linkedin(job):
     score += sum(2 for kw in STACK_KEYWORDS if kw in blob)
     if any(k in title for k in ["lead", "manager", "head", "senior", "senior", "ssr", "sr "]):
         score += 4
-    if any(k in blob for k in ["retail", "consumo masivo", "ecommerce", "e-commerce"]):
-        score += 4
+    score += bono_rubro(blob)
     return True, score
 
 
@@ -455,9 +485,9 @@ def score_empresa(job):
 
     if tiene_negativo(title):
         return False, 0
-    en_chile = "chile" in loc or "santiago" in loc
-    remoto = job.get("remote") or any(k in blob for k in ["remote", "remoto", "latam", "latin america"])
-    if not (en_chile or remoto):
+    en_local = es_local(loc)
+    remoto = job.get("remote") or es_remoto(blob)
+    if not (en_local or remoto):
         return False, 0
     if not any(kw in title for kw in ROLE_KEYWORDS):
         return False, 0
@@ -474,10 +504,9 @@ def score_empresa(job):
     score += sum(2 for kw in STACK_KEYWORDS if kw in blob)
     if any(k in title for k in ["lead", "manager", "head", "senior", "sr "]):
         score += 4
-    if en_chile:
+    if en_local:
         score += 3
-    if any(k in blob for k in ["retail", "consumo masivo", "ecommerce", "e-commerce"]):
-        score += 4
+    score += bono_rubro(blob)
     return True, score
 
 
@@ -661,8 +690,11 @@ def gather_matches():
 
 
 def _job_gob(title, company="Acme", mn=None, mx=None, modality=MODALITY_FULL_TIME,
-             seniority=4, remote=True, desc=""):
+             seniority=None, remote=True, desc=""):
     """Arma una oferta sintetica con la forma que devuelve la API de GetOnBoard."""
+    if seniority is None:
+        # El primer seniority que el perfil no bloquea, del mas alto al mas bajo
+        seniority = next((s for s in (4, 5, 3, 2, 1) if s not in SENIORITY_BLOCK_IDS), 4)
     return {
         "id": "test-1",
         "attributes": {
@@ -674,10 +706,55 @@ def _job_gob(title, company="Acme", mn=None, mx=None, modality=MODALITY_FULL_TIM
             "modality": {"data": {"id": str(modality), "type": "modality"}},
             "seniority": {"data": {"id": seniority, "type": "seniority"}},
             "company": {"data": {"attributes": {"name": company}}},
-            "category_name": "Data Science / Analytics",
+            "category_name": "Categoria de prueba",
         },
         "links": {"public_url": "https://example.com"},
     }
+
+
+def _titulos_de_prueba():
+    """Titulos sinteticos armados con las palabras del perfil cargado.
+
+    Escritos a mano ("Data Engineer", "BI Lead") el autotest solo valia para un
+    perfil de datos: con otras role_keywords fallaba sin que la regla estuviera rota.
+    Cada candidato se valida con las mismas funciones del filtro, asi que lo que sale
+    de aca es un titulo que el perfil de verdad dejaria pasar.
+
+      base     trae palabra de rol; sin negativo, sin part time, sin ruido de contratos
+      analyst  base de nivel analyst (None si el perfil no define ese nivel)
+      senior   base con termino senior, o sea fuera del nivel analyst (None si no hay)
+      pt       termino de part time que se le puede colgar a base (None si no hay)
+      sin_rol  titulo sin ninguna palabra de rol
+    """
+    def ruido(t):
+        return CONTRATOS_ENABLED and fuente_contratos.es_ruido("", t)
+
+    def limpio(t):
+        return (any(kw in t for kw in ROLE_KEYWORDS) and not tiene_negativo(t)
+                and not es_part_time(t) and not ruido(t))
+
+    roles = [kw for kw in ROLE_KEYWORDS if limpio(kw)]
+    base = roles[0] if roles else None
+
+    # Primero un termino que sirva solo; si ninguno calza, analyst + rol
+    candidatos = (list(ANALYST_TIER_TERMS) + roles
+                  + [f"{a} {r}" for a in ANALYST_TIER_TERMS for r in roles])
+    analyst = next((t for t in candidatos if limpio(t) and es_nivel_analyst(t)), None)
+
+    bases = ([analyst] if analyst else []) + roles
+    senior = next((t for t in (f"{s.strip()} {b}" for b in bases
+                               for s in SENIOR_TITLE_TERMS)
+                   if limpio(t) and not es_nivel_analyst(t)), None)
+
+    pt = next((p for p in PART_TIME_TERMS
+               if base and es_part_time(f"{base} ({p})")
+               and not tiene_negativo(f"{base} ({p})")), None)
+
+    sin_rol = next((t for t in ("cargo sin relacion", "zzqx wvk", "qqq")
+                    if not any(kw in t for kw in ROLE_KEYWORDS)
+                    and not tiene_negativo(t) and not ruido(t)), None)
+    return {"base": base, "analyst": analyst, "senior": senior, "pt": pt,
+            "sin_rol": sin_rol}
 
 
 def autotest():
@@ -688,6 +765,9 @@ def autotest():
       1. meter en EMPRESAS_PAGAN_BIEN empresas que no pagan eso a nivel analyst,
       2. detectar part time leyendo la descripcion (falso positivo que salta el umbral),
       3. sacarle el filtro de pago a alguna de las cuatro fuentes.
+
+    Nada de lo que se prueba va escrito aca: empresas, montos, titulos y lugares salen
+    del perfil cargado. Lo que el perfil no permite armar se omite y se informa.
     """
     fallas = []
 
@@ -696,7 +776,34 @@ def autotest():
     # Se toma la primera de cada lista; si una lista esta vacia, sus casos se omiten.
     paga_bien = sorted(EMPRESAS_PAGAN_BIEN)[0] if EMPRESAS_PAGAN_BIEN else None
     no_califica = sorted(EMPRESAS_NO_CALIFICAN)[0] if EMPRESAS_NO_CALIFICAN else None
+    desconocida = next((n for n in ("Empresa Desconocida", "Acme")
+                        if not empresa_paga_bien(n)), "Zzqx Wvk")
     omitidos = 0
+
+    # Los titulos tambien. Sin un titulo base no hay nada que probar, y tampoco hay
+    # bot: con ese perfil ninguna oferta pasaria el filtro de rol.
+    T = _titulos_de_prueba()
+    base, analyst, senior = T["base"], T["analyst"], T["senior"]
+    if not base:
+        log(f"AUTOTEST FALLIDO ({PERFIL_ORIGEN.name}): ninguna palabra de "
+            "match.role_keywords sirve de titulo (lista vacia, o todas caen en "
+            "negative_title, part_time_terms o titulos_ruido). Con este perfil no "
+            "pasaria ninguna oferta.")
+        sys.exit(1)
+    base_pt = f"{base} ({T['pt']})" if T["pt"] else None
+
+    # Lugares de prueba: uno que el perfil acepta y otro que no.
+    todos_lugares = (UBICACION_PAIS_TERMS + UBICACION_CIUDAD_TERMS
+                     + UBICACION_REMOTO_TERMS + LINKEDIN_UBICACION_EXTRA_TERMS)
+    lugar = (UBICACION_PAIS_TERMS[0].title() if UBICACION_PAIS_TERMS
+             else (UBICACION_REMOTO_TERMS[0] if UBICACION_REMOTO_TERMS else None))
+    # Una ciudad del perfil que no arrastre el pais ni un termino de remoto
+    ciudad_sola = next((c for c in UBICACION_CIUDAD_TERMS
+                        if not es_pais(c)
+                        and not es_remoto(c, LINKEDIN_UBICACION_EXTRA_TERMS)), None)
+    fuera = next((l for l in ("ciudad inexistente", "zzqx wvk")
+                  if not any(t in l for t in todos_lugares)
+                  and not any(t in f"{base} {senior}" for t in todos_lugares)), None)
 
     # --- 1. Integridad de las listas de empresas -------------------------------
     solapadas = sorted(
@@ -728,40 +835,45 @@ def autotest():
 
     casos = [
         # Full time con sueldo publicado: manda el techo del rango
-        ("Data Engineer", "Acme", bajo - 300, bajo, False, False),
-        ("Data Analyst", "Acme", None, U - 1, False, False),
-        ("BI Lead", "Acme", bajo, justo, False, True),
-        ("Data Engineer", "Acme", justo, alto, False, True),
-        ("Data Engineer", "Acme", bajo, None, False, False),   # solo minimo, bajo umbral
+        (base, "Acme", bajo - 300, bajo, False, False),
+        (base, "Acme", None, U - 1, False, False),
+        (base, "Acme", bajo, justo, False, True),
+        (base, "Acme", justo, alto, False, True),
+        (base, "Acme", bajo, None, False, False),   # solo minimo, bajo umbral
         # Part time: umbral propio, con la misma regla del techo
-        ("Data Analyst (Part Time)", "Acme", pt_bajo - 300, pt_bajo, True, False),
-        ("Data Analyst (Part Time)", "Acme", UP - 500, UP, True, True),
-        ("BI Lead part time", "Acme", pt_alto, None, True, True),
-        # Part time sin sueldo: misma regla de nivel y empresa que full time
-        ("Analista BI media jornada", "Acme", None, None, True, False),
-        ("Senior Data Analyst part time", "Acme", None, None, True, True),
-        # Sin sueldo publicado: decide el nivel del cargo y la empresa
-        ("Senior Data Analyst", "Empresa Desconocida", None, None, False, True),
-        ("BI Manager", "Empresa Desconocida", None, None, False, True),
-        ("Analista de datos", "Empresa Desconocida", None, None, False, False),
+        (base_pt or base, "Acme", pt_bajo - 300, pt_bajo, True, False),
+        (base_pt or base, "Acme", UP - 500, UP, True, True),
+        (base_pt or base, "Acme", pt_alto, None, True, True),
     ]
-    if entre_pisos:
-        # Un sueldo que basta para part time no basta para full time
-        casos.append(("Data Engineer", "Acme", UP, entre_pisos, False, False))
-        casos.append(("Data Engineer part time", "Acme", UP, entre_pisos, True, True))
+    # Sin sueldo publicado: decide el nivel del cargo y la empresa, igual para las
+    # dos jornadas.
+    if analyst:
+        casos.append((analyst, desconocida, None, None, False, False))
+        casos.append((analyst, desconocida, None, None, True, False))
     else:
         omitidos += 2
-    if paga_bien:
+    if senior:
+        casos.append((senior, desconocida, None, None, False, True))
+        casos.append((senior, desconocida, None, None, True, True))
+    else:
+        omitidos += 2
+    if entre_pisos:
+        # Un sueldo que basta para part time no basta para full time
+        casos.append((base, "Acme", UP, entre_pisos, False, False))
+        casos.append((base_pt or base, "Acme", UP, entre_pisos, True, True))
+    else:
+        omitidos += 2
+    if paga_bien and analyst:
         # Un analyst sin sueldo pasa solo si la empresa esta en la lista.
-        casos.append(("Data Analyst", paga_bien, None, None, False, True))
+        casos.append((analyst, paga_bien, None, None, False, True))
     else:
         omitidos += 1
-    if no_califica:
+    if no_califica and analyst:
         # Y la exclusion gana, incluso con la razon social completa alrededor del
         # nombre. Tener una cadena de retail entre las que pagan bien fue justo lo
-        # que dejo pasar los Data Analyst que se querian cortar.
-        casos.append(("Data Analyst", no_califica, None, None, False, False))
-        casos.append(("Data Analyst", f"Grupo {no_califica.title()} S.A.",
+        # que dejo pasar los cargos analyst que se querian cortar.
+        casos.append((analyst, no_califica, None, None, False, False))
+        casos.append((analyst, f"Grupo {no_califica.title()} S.A.",
                       None, None, False, False))
     else:
         omitidos += 2
@@ -771,9 +883,12 @@ def autotest():
             fallas.append(f"  {titulo!r} @ {empresa!r} [{mn},{mx}] pt={pt}: "
                           f"esperaba {esperado}, obtuvo {obtenido} ({motivo})")
     # --- 3. Deteccion de part time --------------------------------------------
-    if not es_part_time("Data Analyst (Part Time)"):
-        fallas.append("  es_part_time no reconoce '(Part Time)' en el titulo")
-    if es_part_time("Senior Data Engineer"):
+    if base_pt:
+        if not es_part_time(base_pt):
+            fallas.append(f"  es_part_time no reconoce {base_pt!r}")
+    else:
+        omitidos += 1
+    if es_part_time(senior or base):
         fallas.append("  es_part_time marca part time un titulo full time")
     # El filtro de part time NO puede alimentarse de la descripcion: los avisos full
     # time mencionan jornadas de pasada y eso saltaria el umbral. Se revisa el codigo.
@@ -795,50 +910,103 @@ def autotest():
     # (job sintetico, empresa fuera de la lista, sueldo bajo o ausente)
     e2e = [
         ("GetOnBoard sueldo bajo",
-         lambda: score_job(_job_gob("Data Engineer", mn=bajo - 300, mx=bajo))[0], False),
+         lambda: score_job(_job_gob(base, mn=bajo - 300, mx=bajo))[0], False),
         ("GetOnBoard sobre umbral",
-         lambda: score_job(_job_gob("Data Engineer", mn=justo, mx=alto))[0], True),
+         lambda: score_job(_job_gob(base, mn=justo, mx=alto))[0], True),
         ("GetOnBoard part time por modality, bien pagado",
-         lambda: score_job(_job_gob("Data Analyst", mn=UP - 300, mx=pt_alto,
+         lambda: score_job(_job_gob(base, mn=UP - 300, mx=pt_alto,
                                     modality=MODALITY_PART_TIME))[0], True),
         ("GetOnBoard part time por modality, mal pagado",
-         lambda: score_job(_job_gob("Data Analyst", mn=pt_bajo - 300, mx=pt_bajo,
+         lambda: score_job(_job_gob(base, mn=pt_bajo - 300, mx=pt_bajo,
                                     modality=MODALITY_PART_TIME))[0], False),
         ("GetOnBoard freelance mal pagado",
-         lambda: score_job(_job_gob("Data Engineer", mn=pt_bajo - 300, mx=pt_bajo,
+         lambda: score_job(_job_gob(base, mn=pt_bajo - 300, mx=pt_bajo,
                                     modality=MODALITY_FREELANCE))[0], False),
         ("GetOnBoard internship",
-         lambda: score_job(_job_gob("Data Analyst", mn=justo, mx=alto,
+         lambda: score_job(_job_gob(base, mn=justo, mx=alto,
                                     modality=MODALITY_INTERNSHIP))[0], False),
-        ("GetOnBoard descripcion que menciona media jornada no lo vuelve part time",
-         lambda: score_job(_job_gob("Data Engineer", mn=bajo - 800, mx=bajo - 300,
-                                    desc="Horario flexible, media jornada los viernes"))[0],
-         False),
-        ("LinkedIn analyst empresa fuera de la lista",
-         lambda: score_linkedin({"title": "Data Analyst", "company": "Retail Cualquiera",
-                                 "location": "Santiago, Chile"})[0], False),
-        ("LinkedIn senior sin sueldo",
-         lambda: score_linkedin({"title": "Senior Data Engineer", "company": "Acme",
-                                 "location": "Santiago, Chile"})[0], True),
-        ("Empresas analyst fuera de la lista",
-         lambda: score_empresa({"title": "Data Analyst", "company": "Retail Cualquiera",
-                                "location": "Santiago, Chile", "desc": ""})[0], False),
     ]
-    if paga_bien:
+    if T["pt"]:
+        e2e.append(
+            ("GetOnBoard descripcion que menciona part time no lo vuelve part time",
+             lambda: score_job(_job_gob(base, mn=bajo - 800, mx=bajo - 300,
+                                        desc=f"Horario flexible, {T['pt']} los viernes"))[0],
+             False))
+    else:
+        omitidos += 1
+    if analyst and lugar:
+        e2e += [
+            ("LinkedIn analyst empresa fuera de la lista",
+             lambda: score_linkedin({"title": analyst, "company": desconocida,
+                                     "location": lugar})[0], False),
+            ("Empresas analyst fuera de la lista",
+             lambda: score_empresa({"title": analyst, "company": desconocida,
+                                    "location": lugar, "desc": ""})[0], False),
+        ]
+    else:
+        omitidos += 2
+    if senior and lugar:
+        e2e += [
+            ("LinkedIn senior sin sueldo",
+             lambda: score_linkedin({"title": senior, "company": desconocida,
+                                     "location": lugar})[0], True),
+            ("Empresas senior sin sueldo",
+             lambda: score_empresa({"title": senior, "company": desconocida,
+                                    "location": lugar, "desc": ""})[0], True),
+        ]
+    else:
+        omitidos += 2
+    if paga_bien and analyst and lugar:
         e2e.append(("LinkedIn analyst empresa que paga bien",
-                    lambda: score_linkedin({"title": "Data Analyst", "company": paga_bien,
-                                            "location": "Santiago, Chile"})[0], True))
+                    lambda: score_linkedin({"title": analyst, "company": paga_bien,
+                                            "location": lugar})[0], True))
         e2e.append(("Empresas analyst que paga bien",
-                    lambda: score_empresa({"title": "Data Analyst", "company": paga_bien,
-                                           "location": "Santiago, Chile", "desc": ""})[0], True))
+                    lambda: score_empresa({"title": analyst, "company": paga_bien,
+                                           "location": lugar, "desc": ""})[0], True))
     else:
         omitidos += 2
     if entre_pisos:
         e2e.append(("GetOnBoard freelance usa el umbral de part time",
-                    lambda: score_job(_job_gob("Data Engineer", mn=UP, mx=entre_pisos,
+                    lambda: score_job(_job_gob(base, mn=UP, mx=entre_pisos,
                                                modality=MODALITY_FREELANCE))[0], True))
     else:
         omitidos += 1
+
+    # La ubicacion sale del perfil: lo que no es remoto ni local se descarta aunque
+    # pase el pago. Los pares de arriba, con `lugar`, son el control positivo.
+    if ciudad_sola and senior:
+        e2e += [
+            ("LinkedIn ciudad sin pais no basta",
+             lambda: score_linkedin({"title": senior, "company": desconocida,
+                                     "location": ciudad_sola.title()})[0], False),
+            ("Empresas ciudad sin pais basta",
+             lambda: score_empresa({"title": senior, "company": desconocida,
+                                    "location": ciudad_sola.title(), "desc": ""})[0], True),
+        ]
+    else:
+        omitidos += 2
+    if fuera and UBICACION_PAIS_TERMS:
+        e2e += [
+            ("GetOnBoard presencial fuera de la ubicacion del perfil",
+             lambda: score_job(_job_gob(base, mn=justo, mx=alto, remote=False,
+                                        desc=f"Presencial en {fuera}"))[0], False),
+            ("GetOnBoard presencial en la ubicacion del perfil",
+             lambda: score_job(_job_gob(base, mn=justo, mx=alto, remote=False,
+                                        desc=f"Presencial en {lugar}"))[0], True),
+        ]
+    else:
+        omitidos += 2
+    if fuera and senior:
+        e2e += [
+            ("LinkedIn fuera de la ubicacion del perfil",
+             lambda: score_linkedin({"title": senior, "company": desconocida,
+                                     "location": fuera})[0], False),
+            ("Empresas fuera de la ubicacion del perfil",
+             lambda: score_empresa({"title": senior, "company": desconocida,
+                                    "location": fuera, "desc": ""})[0], False),
+        ]
+    else:
+        omitidos += 2
 
     if CONTRATOS_ENABLED:
         # Tarifas por hora derivadas del piso de part time y de las horas del perfil:
@@ -853,23 +1021,26 @@ def autotest():
                                    "salary_period": periodo, "part_time": pt})[0]
         e2e += [
             ("Contrato por hora sobre el piso de part time pasa",
-             lambda: _ct("Senior Data Engineer", *hr_ok), True),
+             lambda: _ct(base, *hr_ok), True),
             ("Contrato por hora bajo el piso no llega",
-             lambda: _ct("Data Engineer", *hr_bajo), False),
+             lambda: _ct(base, *hr_bajo), False),
             ("Part time mensual sobre el piso pasa",
-             lambda: _ct("BI Lead", UP - 500, pt_alto, "monthly", pt=True), True),
-            ("Contrato sin rol de datos se descarta",
-             lambda: _ct("Salesforce Developer", *hr_ok), False),
+             lambda: _ct(base, UP - 500, pt_alto, "monthly", pt=True), True),
         ]
+        if T["sin_rol"]:
+            e2e.append(("Contrato sin rol objetivo se descarta",
+                        lambda: _ct(T["sin_rol"], *hr_ok), False))
+        else:
+            omitidos += 1
         if entre_pisos:
             e2e.append(("Contrato mensual es full time y no llega con sueldo de part time",
-                        lambda: _ct("BI Lead", UP, entre_pisos, "monthly"), False))
+                        lambda: _ct(base, UP, entre_pisos, "monthly"), False))
         else:
             omitidos += 1
         if perfil.EMPRESAS_RUIDO:
             ruido = perfil.EMPRESAS_RUIDO[0]
             e2e.append(("Reclutador de entrenamiento de IA se descarta",
-                        lambda: _ct("Business Intelligence & Analytics Lead", *hr_ok,
+                        lambda: _ct(base, *hr_ok,
                                     company=f"{ruido.title()} Inc."), False))
         else:
             omitidos += 1
@@ -889,10 +1060,12 @@ def autotest():
             log(f)
         sys.exit(1)
     resumen = (f"Autotest ok ({PERFIL_ORIGEN.name}): {len(casos)} casos de la regla de "
-               f"pago + {len(e2e)} de las cuatro fuentes + integridad de las listas.")
+               f"pago + {len(e2e)} de las cuatro fuentes + integridad de las listas. "
+               f"Titulos de prueba: {base!r}, {analyst!r}, {senior!r}.")
     if omitidos:
-        resumen += (f" {omitidos} casos omitidos: el perfil trae vacia alguna lista de "
-                    "empresas o el piso de part time no es mas bajo que el de full time.")
+        resumen += (f" {omitidos} casos omitidos: el perfil trae vacia alguna lista "
+                    "(empresas, nivel analyst, ubicacion, part time) o el piso de part "
+                    "time no es mas bajo que el de full time.")
     log(resumen)
 
 

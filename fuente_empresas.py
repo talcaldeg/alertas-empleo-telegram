@@ -28,7 +28,8 @@ from perfil import USER_AGENT as UA
 
 # El registro de empresas (nombre, ats, token) y las queries de Eightfold salen
 # del perfil, no del codigo: ver perfil.json y el README.
-from perfil import EMPRESAS_REGISTRO as EMPRESAS, EIGHTFOLD_QUERIES
+from perfil import (EMPRESAS_REGISTRO as EMPRESAS, EIGHTFOLD_QUERIES,
+                    EIGHTFOLD_LOCATION)
 
 
 def _get(url, headers=None):
@@ -115,10 +116,11 @@ def _eightfold(company, token):
     }
     seen, out = set(), []
     for q in EIGHTFOLD_QUERIES:
-        params = urllib.parse.urlencode({
-            "domain": domain, "query": q, "location": "Chile",
-            "start": 0, "num": 25, "sort_by": "relevance",
-        })
+        campos = {"domain": domain, "query": q,
+                  "start": 0, "num": 25, "sort_by": "relevance"}
+        if EIGHTFOLD_LOCATION:
+            campos["location"] = EIGHTFOLD_LOCATION
+        params = urllib.parse.urlencode(campos)
         try:
             data = json.loads(_get(f"https://{tenant}/api/pcsx/search?{params}", hdr))
         except Exception:
